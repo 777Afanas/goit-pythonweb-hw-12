@@ -1,11 +1,35 @@
+from contextlib import asynccontextmanager
+import redis.asyncio as redis
 from fastapi import FastAPI
-from src.api.contacts import router as contacts_router
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi_limiter import FastAPILimiter # type: ignore
 
-app = FastAPI(title="Contacts Management REST API", version="1.0.0")
+from src.api import auth, contacts, users
+from src.conf.config import settings
 
-app.include_router(contacts_router)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    redis_connection = redis.from_url(
+        settings.REDIS_URL,  # type: ignore
+        encoding="utf-8",
+        decode_responses=True,
+    )
+    await FastAPILimiter.init(redis_connection)
+    yield
+    await redis_connection.close()
 
 
-@app.get("/")
-def root():
-    return {"message": "Contacts API is running"}
+app = FastAPI(title="Contacts API", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(auth.router, prefix="/api")
+app.include_router(users.router, prefix="/api")
+app.include_router(contacts.router, prefix="/api")
