@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 import redis.asyncio as redis
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi_limiter import FastAPILimiter # type: ignore
+from fastapi_limiter import FastAPILimiter  # type: ignore
 
 from src.api import auth, contacts, users
 from src.conf.config import settings
@@ -11,7 +11,7 @@ from src.conf.config import settings
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     redis_connection = redis.from_url(
-        settings.REDIS_URL,  # type: ignore
+        f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}",
         encoding="utf-8",
         decode_responses=True,
     )

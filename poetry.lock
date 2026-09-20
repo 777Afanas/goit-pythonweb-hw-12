@@ -451,19 +451,19 @@ standard-no-fastapi-cloud-cli = ["email-validator (>=2.0.0)", "fastapi-cli[stand
 
 [[package]]
 name = "fastapi-limiter"
-version = "0.2.0"
+version = "0.1.6"
 description = "A request rate limiter for fastapi"
 optional = false
-python-versions = "<4,>=3.9"
+python-versions = ">=3.9,<4.0"
 groups = ["main"]
 files = [
-    {file = "fastapi_limiter-0.2.0-py3-none-any.whl", hash = "sha256:e576ebb29cc9614c2f38471c60ed0e849024e9a1b7a2aeb4c2a31a6d708b4aea"},
-    {file = "fastapi_limiter-0.2.0.tar.gz", hash = "sha256:b042259f6280056b5b2b3f506edd76c8e0648d7a5ce86c3485216a4a0fd0ec14"},
+    {file = "fastapi_limiter-0.1.6-py3-none-any.whl", hash = "sha256:2e53179a4208b8f2c8795e38bb001324d3dc37d2800ff49fd28ec5caabf7a240"},
+    {file = "fastapi_limiter-0.1.6.tar.gz", hash = "sha256:6f5fde8efebe12eb33861bdffb91009f699369a3c2862cdc7c1d9acf912ff443"},
 ]
 
 [package.dependencies]
 fastapi = "*"
-pyrate-limiter = ">=3.9.0"
+redis = ">=4.2.0rc1"
 
 [[package]]
 name = "fastapi-mail"
@@ -1156,24 +1156,6 @@ files = [
 
 [package.extras]
 crypto = ["cryptography (>=3.4.0)"]
-
-[[package]]
-name = "pyrate-limiter"
-version = "4.5.0"
-description = "Python rate limiter with pluggable algorithms and backends"
-optional = false
-python-versions = ">=3.10"
-groups = ["main"]
-files = [
-    {file = "pyrate_limiter-4.5.0-py3-none-any.whl", hash = "sha256:e7320a715adf404cb7b2f399e05ceb59cae165275b21f7708eb1b9fd9608e91c"},
-    {file = "pyrate_limiter-4.5.0.tar.gz", hash = "sha256:098345fff3a52b84dee9bcf6973f184c8b3ef8d34e1f4f781ac0773e3984598b"},
-]
-
-[package.extras]
-all = ["filelock (>=3.0)", "psycopg[pool] (>=3.2.9)", "redis (>=6.2.0)"]
-filelock = ["filelock (>=3.0)"]
-postgres = ["psycopg[pool] (>=3.2.9)"]
-redis = ["redis (>=6.2.0)"]
 
 [[package]]
 name = "python-dotenv"
@@ -1995,4 +1977,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.14,<4.0"
-content-hash = "e868a141b2b667cddd0d347ccf4b97b5b739eb02876d22a3bf3dc11f8b0d8903"
+content-hash = "3c9407f57c4a487e2d7a406d6673d4b7828e96cc0a93ff207e9d91bbdb0e3609"
