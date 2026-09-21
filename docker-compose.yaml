@@ -1,23 +1,53 @@
-version: '3.8'
 
 services:
-  postgres:
-    image: postgres:15-alpine
+  db:
+    image: postgres:15
     container_name: postgres_db
+    restart: always
+    # ДОДАНО: пряме підключення .env для автоматичної підстановки змінних у контейнер бази
+    env_file:
+      - .env
+    # ВИПРАВЛЕНО: значення беруться через змінні оточення, пароль не хардкодиться у файлі
     environment:
-      POSTGRES_DB: rest_app
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: secretpass-hw10
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
+    # ПЕРЕВІРКА: очікує повної готовності Postgres перед тим, як запустити FastAPI
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
-  redis:
-    image: redis:7-alpine
+  redis_cache:
+    image: redis:alpine
     container_name: redis_cache
+    restart: always
     ports:
       - "6379:6379"
 
+  # ДОДАНО: сервіс для застосунку FastAPI 
+  app:
+    # ДОДАНО: збірка образу через Dockerfile, створений у корені проєкту
+    build: .
+    container_name: fastapi_app
+    restart: always
+    # ДОДАНО: передача всіх змінних (JWT, Cloudinary, пошта, хости) усередину контейнера
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    # ДОДАНО: запуск застосунку тільки після успішного старту Redis і повної готовності БД
+    depends_on:
+      db:
+        condition: service_healthy
+      redis_cache:
+        condition: service_started
+
+# ВИПРАВЛЕНО: блок volumes відділений новим рядком для коректного YAML-синтаксису
 volumes:
-  pgdata:
+  postgres_data:
