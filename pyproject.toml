@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "hw-10"
+name = "hw-12"
 version = "0.1.0"
 description = ""
 authors = ["777Afanas <serhii2111@yahoo.com>"]
@@ -27,3 +27,10 @@ python-multipart = ">=0.0.9"
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
+[dependency-groups]
+dev = [
+    "pytest (>=9.1.1,<10.0.0)",
+    "pytest-cov (>=7.1.0,<8.0.0)",
+    "sphinx (>=9.1.0,<10.0.0)",
+    "requests (>=2.34.2,<3.0.0)"
+]
