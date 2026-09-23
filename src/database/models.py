@@ -1,7 +1,17 @@
 from datetime import date, datetime
 import enum
 from typing import List, Optional
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.database.db import Base
 
@@ -27,6 +37,7 @@ class User(Base):
         confirmed: Прапорець підтвердження електронної адреси.
         refresh_token: Довгоживучий токен для оновлення сесії авторизації.
         created_at: Час реєстрації користувача.
+        updated_at: Час останнього оновлення запису користувача.
         contacts: Зв'язок один-до-багатьох із контактами користувача.
     """
 
@@ -38,7 +49,7 @@ class User(Base):
         String(150), unique=True, index=True, nullable=False
     )
     password: Mapped[str] = mapped_column(String(255), nullable=False)
-    avatar: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)     
+    avatar: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     role: Mapped[UserRole] = mapped_column(
         Enum(
             UserRole,
@@ -50,7 +61,10 @@ class User(Base):
     )
     confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     refresh_token: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=func.now(), onupdate=func.now()
+    )
 
     contacts: Mapped[List["Contact"]] = relationship(
         "Contact", back_populates="user", cascade="all, delete-orphan"

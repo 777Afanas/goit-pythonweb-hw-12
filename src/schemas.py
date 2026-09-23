@@ -6,25 +6,10 @@
 """
 
 from datetime import date, datetime
-from enum import Enum
 from typing import Optional
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-# --- Переліки (Enums) ---
-
-
-class UserRole(str, Enum):
-    """
-    Перелік ролей користувачів для системи контролю доступу (RBAC).
-
-    Attributes:
-        USER: Базовий користувач застосунку.
-        ADMIN: Адміністратор з розширеними правами (зокрема зміна аватара).
-    """
-
-    USER = "user"
-    ADMIN = "admin"
-
+from src.database.models import UserRole
 
 # --- Схеми аутентифікації та токенів ---
 
