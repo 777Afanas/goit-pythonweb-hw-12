@@ -105,17 +105,38 @@ class AuthService:
         )
 
     @staticmethod
+    def create_reset_password_token(data: dict) -> str:
+        """
+        Створює тимчасовий токен для безпечного скидання пароля.
+
+        :param data: Словник з даними користувача (зокрема email у полі 'sub').
+        :type data: dict
+        :return: Закодований рядок токена зі scope 'reset_password'.
+        :rtype: str
+        """
+        to_encode = data.copy()
+        now = datetime.now(timezone.utc)
+        expire = now + timedelta(seconds=settings.RESET_TOKEN_EXPIRATION_SECONDS)
+        to_encode.update({"iat": now, "exp": expire, "scope": "reset_password"})
+        return jwt.encode(
+            to_encode,
+            settings.RESET_TOKEN_SECRET_KEY,
+            algorithm=settings.JWT_ALGORITHM,
+        )
+
+    @staticmethod
     def decode_token(token: str, expected_scope: str) -> str:
         """Декодує JWT токен і перевіряє відповідність scope.
 
         :param token: JWT токен у вигляді рядка.
-        :param expected_scope: Очікуване значення поля scope ('access_token', 'refresh_token', тощо).
+        :param expected_scope: Очікуване значення поля scope ('access_token', 'refresh_token', 'reset_password', тощо).
         :raises HTTPException: Якщо токен недійсний, прострочений або містить некоректний scope.
         :return: Email користувача (sub).
         """
+        # Використовуємо секретний ключ для тимчасових токенів (email та скидання пароля)
         secret_key = (
             settings.RESET_TOKEN_SECRET_KEY
-            if expected_scope == "email_token"
+            if expected_scope in ("email_token", "reset_password")
             else settings.JWT_SECRET_KEY
         )
         try:
@@ -126,20 +147,20 @@ class AuthService:
             )
             if payload.get("scope") != expected_scope:
                 raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid scope for token",
                 )
             email: str | None = payload.get("sub")
             if email is None:
                 raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Could not validate credentials",
                 )
             return email
         except jwt.PyJWTError:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Could not validate credentials",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired token",
             )
 
     @staticmethod

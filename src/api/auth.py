@@ -1,4 +1,5 @@
-"""Модуль маршрутизації для автентифікації та керування доступом користувачів.
+"""
+Модуль маршрутизації для автентифікації та керування доступом користувачів.
 
 Включає реєстрацію, підтвердження електронної пошти, вхід з видачею пари токенів
 (access/refresh), ротацію токенів та механізм скидання пароля.
@@ -47,14 +48,20 @@ def register(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    """Реєструє нового користувача та відправляє лист для підтвердження email.
+    """
+    Реєструє нового користувача та відправляє лист для підтвердження email.
 
-    :param body: Дані нового користувача (username, email, password).
+    :param body: Схема даних нового користувача (username, email, password).
+    :type body: UserCreate
     :param background_tasks: Менеджер фонових завдань FastAPI.
-    :param request: Об'єкт HTTP-запиту для отримання базового URL.
+    :type background_tasks: BackgroundTasks
+    :param request: Об'єкт HTTP-запиту для отримання базової адреси сервера.
+    :type request: Request
     :param db: Сесія бази даних SQLAlchemy.
-    :raises HTTPException: 409 Conflict, якщо email вже зайнятий.
-    :return: Створений об'єкт користувача.
+    :type db: Session
+    :raises HTTPException: 409 Conflict, якщо email вже використовується іншим користувачем.
+    :return: Модель збереженого користувача.
+    :rtype: UserResponse
     """
     user_repo = UserRepository(db)
     exist_user = user_repo.get_user_by_email(body.email)
@@ -82,12 +89,16 @@ def login(
     body: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
-    """Автентифікує користувача та видає пару токенів (access і refresh).
+    """
+    Автентифікує користувача та видає пару токенів (access і refresh).
 
     :param body: Форма авторизації (username містить email, password).
+    :type body: OAuth2PasswordRequestForm
     :param db: Сесія бази даних SQLAlchemy.
+    :type db: Session
     :raises HTTPException: 401 Unauthorized, якщо дані невірні або email не підтверджено.
     :return: Словник з access_token, refresh_token та token_type.
+    :rtype: dict
     """
     user_repo = UserRepository(db)
     user = user_repo.get_user_by_email(body.username)
@@ -105,7 +116,6 @@ def login(
     access_token = AuthService.create_access_token({"sub": user.email})
     refresh_token = AuthService.create_refresh_token({"sub": user.email})
 
-    # Оновлення refresh токена в БД через шар репозиторію
     user_repo.update_token(user, refresh_token)
 
     return {
@@ -117,12 +127,16 @@ def login(
 
 @router.get("/confirmed_email/{token}")
 def confirmed_email(token: str, db: Session = Depends(get_db)):
-    """Підтверджує адресу електронної пошти за email-токеном.
+    """
+    Підтверджує адресу електронної пошти за email-токеном.
 
     :param token: JWT токен верифікації зі scope 'email_token'.
+    :type token: str
     :param db: Сесія бази даних SQLAlchemy.
+    :type db: Session
     :raises HTTPException: 400 Bad Request, якщо токен недійсний або користувача не знайдено.
-    :return: Повідомлення про успішне підтвердження.
+    :return: Повідомлення про результат підтвердження.
+    :rtype: dict
     """
     email = AuthService.decode_token(token, expected_scope="email_token")
 
@@ -145,12 +159,16 @@ def refresh_token(
     credentials: HTTPAuthorizationCredentials = Security(security),
     db: Session = Depends(get_db),
 ):
-    """Виконує безпечну ротацію пари токенів за допомогою refresh token.
+    """
+    Виконує безпечну ротацію пари токенів за допомогою refresh token.
 
     :param credentials: Заголовок авторизації Bearer із refresh токеном.
+    :type credentials: HTTPAuthorizationCredentials
     :param db: Сесія бази даних SQLAlchemy.
+    :type db: Session
     :raises HTTPException: 401 Unauthorized, якщо токен недійсний, відкликаний або застарілий.
-    :return: Нова пара access_token та refresh_token.
+    :return: Нова пара токенів access_token та refresh_token.
+    :rtype: dict
     """
     token = credentials.credentials
     email = AuthService.decode_token(token, expected_scope="refresh_token")
@@ -164,7 +182,6 @@ def refresh_token(
             detail="User not found",
         )
 
-    # Захист від повторного використання: звірка зі збереженим значенням
     if user.refresh_token != token:
         user_repo.update_token(user, None)
         raise HTTPException(
@@ -184,25 +201,40 @@ def refresh_token(
     }
 
 
-@router.post("/request_reset_password")
+@router.post(
+    "/request-reset-password",
+    status_code=status.HTTP_200_OK,
+)
+@router.post(
+    "/request_reset_password",
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
 def request_reset_password(
     body: RequestResetPassword,
     background_tasks: BackgroundTasks,
     request: Request,
     db: Session = Depends(get_db),
 ):
-    """Ініціює процедуру відновлення пароля та надсилає лист із посиланням.
+    """
+    Ініціює процедуру скидання пароля та надсилає лист із безпечним токеном.
 
-    :param body: Схема з email адресою облікового запису.
+    :param body: Схема запиту з email-адресою облікового запису.
+    :type body: RequestResetPassword
     :param background_tasks: Менеджер фонових завдань FastAPI.
-    :param request: Об'єкт HTTP-запиту.
+    :type background_tasks: BackgroundTasks
+    :param request: Об'єкт HTTP-запиту для генерації абсолютного URL.
+    :type request: Request
     :param db: Сесія бази даних SQLAlchemy.
-    :return: Інформаційне повідомлення про відправку інструкцій.
+    :type db: Session
+    :return: Повідомлення з інструкцією.
+    :rtype: dict
     """
     user_repo = UserRepository(db)
     user = user_repo.get_user_by_email(body.email)
+
     if user:
-        reset_token = AuthService.create_email_token({"sub": user.email})
+        reset_token = AuthService.create_reset_password_token({"sub": user.email})
         background_tasks.add_task(
             send_reset_password_email,
             user.email,
@@ -210,22 +242,41 @@ def request_reset_password(
             str(request.base_url),
             reset_token,
         )
+
     return {"message": "Check your email for the reset instructions"}
 
 
-@router.post("/reset_password")
+@router.post(
+    "/reset-password",
+    status_code=status.HTTP_200_OK,
+)
+@router.post(
+    "/reset_password",
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
 def reset_password(
     body: ResetPassword,
     db: Session = Depends(get_db),
 ):
-    """Встановлює новий пароль користувача після перевірки валідності токена.
-
-    :param body: Схема із захисним токеном скидання та новим паролем.
-    :param db: Сесія бази даних SQLAlchemy.
-    :raises HTTPException: 400 Bad Request, якщо токен недійсний або користувача не знайдено.
-    :return: Повідомлення про успішну зміну пароля.
     """
-    email = AuthService.decode_token(body.token, expected_scope="email_token")
+    Валідує токен відновлення та встановлює новий пароль облікового запису.
+
+    :param body: Схема зі знайденим токеном скидання та новим паролем.
+    :type body: ResetPassword
+    :param db: Сесія бази даних SQLAlchemy.
+    :type db: Session
+    :raises HTTPException: 400 Bad Request, якщо токен недійсний, застарілий або користувача не існує.
+    :return: Підтвердження про успішне оновлення пароля.
+    :rtype: dict
+    """
+    try:
+        email = AuthService.decode_token(body.token, expected_scope="reset_password")
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token",
+        )
 
     user_repo = UserRepository(db)
     user = user_repo.get_user_by_email(email)
