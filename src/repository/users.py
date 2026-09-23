@@ -1,5 +1,11 @@
+"""
+Репозиторій для роботи з сутністю користувача (User) у базі даних.
+"""
+
 from typing import Optional
+import redis
 from sqlalchemy.orm import Session
+from src.database.cache import redis_client
 from src.database.models import User, UserRole
 from src.schemas import UserCreate
 
@@ -50,7 +56,7 @@ class UserRepository:
         return user
 
     def confirm_email(self, email: str) -> None:
-        """Підтверджує адресу електронної пошти користувача.
+        """Підтверджує адресу електронної пошти користувача та інвалідує його кеш.
 
         :param email: Електронна адреса користувача.
         """
@@ -58,9 +64,13 @@ class UserRepository:
         if user:
             user.confirmed = True
             self.db.commit()
+            try:
+                redis_client.delete(f"user:{email}")
+            except redis.RedisError:
+                pass
 
     def update_avatar(self, email: str, url: str) -> Optional[User]:
-        """Оновлює URL-адресу аватара користувача.
+        """Оновлює URL-адресу аватара користувача та скидає старий кеш.
 
         :param email: Електронна адреса користувача.
         :param url: Нова URL-адреса зображення аватара.
@@ -71,6 +81,10 @@ class UserRepository:
             user.avatar = url
             self.db.commit()
             self.db.refresh(user)
+            try:
+                redis_client.delete(f"user:{email}")
+            except redis.RedisError:
+                pass
         return user
 
     def update_token(self, user: User, token: str | None) -> None:
@@ -83,10 +97,14 @@ class UserRepository:
         self.db.commit()
 
     def update_password(self, user: User, new_hashed_password: str) -> None:
-        """Оновлює захешований пароль користувача в БД.
+        """Оновлює захешований пароль користувача в БД та скидає кеш сесії.
 
         :param user: Об'єкт користувача моделі User.
         :param new_hashed_password: Новий захешований рядок пароля.
         """
         user.password = new_hashed_password
         self.db.commit()
+        try:
+            redis_client.delete(f"user:{user.email}")
+        except redis.RedisError:
+            pass

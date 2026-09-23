@@ -43,3 +43,6 @@ class Settings(BaseSettings):
 
 
 settings = Settings()  # type: ignore
+
+# Аліас для сумісності з імпортами вигляду `from src.conf.config import config`
+config = settings

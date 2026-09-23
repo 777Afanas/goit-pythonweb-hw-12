@@ -14,8 +14,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 @router.get(
     "/me",
-    response_model=UserResponse,
-    dependencies=[Depends(RateLimiter(times=5, seconds=60))],  # type: ignore
+    response_model=UserResponse,     
 )
 async def get_me(user: User = Depends(AuthService.get_current_user)):
     return user

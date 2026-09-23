@@ -16,19 +16,12 @@ import redis
 from sqlalchemy.orm import Session
 
 from src.conf.config import settings
+from src.database.cache import redis_client
 from src.database.db import get_db
 from src.database.models import User
 from src.repository.users import UserRepository
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
-
-# Підключення до Redis для кешування
-redis_client = redis.Redis(
-    host=settings.REDIS_HOST,
-    port=settings.REDIS_PORT,
-    db=0,
-    decode_responses=True,
-)
 
 
 class AuthService:
@@ -69,7 +62,7 @@ class AuthService:
         expire = (
             now + timedelta(seconds=expires_delta)
             if expires_delta
-            else now + timedelta(minutes=15)
+            else now + timedelta(seconds=settings.JWT_EXPIRATION_SECONDS)
         )
         to_encode.update({"iat": now, "exp": expire, "scope": "access_token"})
         return jwt.encode(
@@ -105,10 +98,10 @@ class AuthService:
         """
         to_encode = data.copy()
         now = datetime.now(timezone.utc)
-        expire = now + timedelta(days=1)
+        expire = now + timedelta(seconds=settings.RESET_TOKEN_EXPIRATION_SECONDS)
         to_encode.update({"iat": now, "exp": expire, "scope": "email_token"})
         return jwt.encode(
-            to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
+            to_encode, settings.RESET_TOKEN_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
         )
 
     @staticmethod
@@ -120,10 +113,15 @@ class AuthService:
         :raises HTTPException: Якщо токен недійсний, прострочений або містить некоректний scope.
         :return: Email користувача (sub).
         """
+        secret_key = (
+            settings.RESET_TOKEN_SECRET_KEY
+            if expected_scope == "email_token"
+            else settings.JWT_SECRET_KEY
+        )
         try:
             payload = jwt.decode(
                 token,
-                settings.JWT_SECRET_KEY,
+                secret_key,
                 algorithms=[settings.JWT_ALGORITHM],
             )
             if payload.get("scope") != expected_scope:
@@ -165,34 +163,38 @@ class AuthService:
         )
 
         email = AuthService.decode_token(token, expected_scope="access_token")
+        cache_key = f"user:{email}"
 
         # 1. Спроба отримати користувача з кешу Redis
-        cache_key = f"user:{email}"
         try:
             cached_user = redis_client.get(cache_key)
             if cached_user:
                 user_data = json.loads(cached_user)  # type: ignore
-                # Повертаємо об'єкт User, створений з кешованих даних
-                return User(**user_data)
+                detached_user = User(**user_data)
+                # Прив'язуємо об'єкт до поточної сесії через merge для коректної роботи ORM
+                return db.merge(detached_user, load=False)
         except redis.RedisError:
-            # Якщо Redis тимчасово недоступний, продовжуємо через базу
             pass
 
-        # 2. Якщо в кеші немає — звертаємось до бази через UserRepository
+        # 2. Якщо в кеші немає — звернення до PostgreSQL
         user_repo = UserRepository(db)
         user = user_repo.get_user_by_email(email)
         if user is None:
             raise credentials_exception
 
-        # 3. Зберігаємо користувача в кеш Redis (TTL: 900 сек / 15 хвилин)
+        # 3. Запис у кеш Redis із TTL 900 сек (15 хвилин)
         try:
+            role_val = getattr(user, "role", None)
+            if hasattr(role_val, "value"):
+                role_val = str(getattr(user, "role", "user"))
+
             user_dict = {
                 "id": user.id,
                 "username": user.username,
                 "email": user.email,
-                "avatar": user.avatar,
-                "role": user.role,
-                "confirmed": user.confirmed,
+                "avatar": getattr(user, "avatar", None),
+                "role": role_val,
+                "confirmed": getattr(user, "confirmed", False),
             }
             redis_client.setex(cache_key, 900, json.dumps(user_dict))
         except redis.RedisError:
