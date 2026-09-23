@@ -1,6 +1,6 @@
 """Модуль автентифікації, авторизації та керування токенами безпеки.
 
-Забезпечує хешування паролів, роботу з JWT (access/refresh/email токени),
+Забезпечує хешування паролів, роботу з JWT (access/refresh/email/reset токени),
 а також швидку верифікацію користувача через кешування в Redis.
 """
 
@@ -25,15 +25,18 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
 class AuthService:
-    """Сервіс для автентифікації користувачів і контролю доступу."""
+    """Сервіс для автентифікації користувачів, генерації токенів і контролю доступу."""
 
     @staticmethod
     def verify_password(plain_password: str, hashed_password: str) -> bool:
-        """Перевіряє відповідність відкритого пароля його хешу.
+        """Перевіряє відповідність відкритого пароля його збереженому хешу.
 
-        :param plain_password: Пароль у відкритому вигляді.
-        :param hashed_password: Хеш пароля з бази даних.
+        :param plain_password: Пароль користувача у відкритому вигляді.
+        :type plain_password: str
+        :param hashed_password: Захешований пароль із бази даних.
+        :type hashed_password: str
         :return: True, якщо пароль збігається, інакше False.
+        :rtype: bool
         """
         return bcrypt.checkpw(
             plain_password.encode("utf-8"), hashed_password.encode("utf-8")
@@ -41,10 +44,12 @@ class AuthService:
 
     @staticmethod
     def get_password_hash(password: str) -> str:
-        """Генерує bcrypt-хеш для пароля.
+        """Генерує безпечний bcrypt-хеш для пароля користувача.
 
         :param password: Пароль у відкритому вигляді.
-        :return: Захешований рядок пароля.
+        :type password: str
+        :return: Захешований рядок пароля для збереження в БД.
+        :rtype: str
         """
         salt = bcrypt.gensalt()
         return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
@@ -53,9 +58,12 @@ class AuthService:
     def create_access_token(data: dict, expires_delta: Optional[float] = None) -> str:
         """Генерує короткоживучий JWT токен доступу (access token).
 
-        :param data: Словник з даними (payload), зазвичай містить 'sub': email.
-        :param expires_delta: Опціональний час життя в секундах.
-        :return: Закодований рядок токена.
+        :param data: Словник з даними корисного навантаження (payload), зазвичай містить 'sub': email.
+        :type data: dict
+        :param expires_delta: Опціональний час життя токена в секундах.
+        :type expires_delta: Optional[float]
+        :return: Закодований рядок access токена.
+        :rtype: str
         """
         to_encode = data.copy()
         now = datetime.now(timezone.utc)
@@ -73,9 +81,12 @@ class AuthService:
     def create_refresh_token(data: dict, expires_delta: Optional[float] = None) -> str:
         """Генерує довгоживучий JWT токен оновлення (refresh token).
 
-        :param data: Словник з даними для кодування.
-        :param expires_delta: Опціональний час життя в секундах.
-        :return: Закодований рядок токена.
+        :param data: Словник з даними для кодування в payload токена.
+        :type data: dict
+        :param expires_delta: Опціональний час життя токена в секундах (за замовчуванням 7 днів).
+        :type expires_delta: Optional[float]
+        :return: Закодований рядок refresh токена.
+        :rtype: str
         """
         to_encode = data.copy()
         now = datetime.now(timezone.utc)
@@ -91,23 +102,26 @@ class AuthService:
 
     @staticmethod
     def create_email_token(data: dict) -> str:
-        """Створює тимчасовий токен для підтвердження пошти або скидання пароля.
+        """Створює тимчасовий токен для підтвердження електронної пошти.
 
-        :param data: Словник з даними користувача.
-        :return: Закодований рядок токена.
+        :param data: Словник з даними користувача (зокрема email у полі 'sub').
+        :type data: dict
+        :return: Закодований рядок токена зі scope 'email_token'.
+        :rtype: str
         """
         to_encode = data.copy()
         now = datetime.now(timezone.utc)
         expire = now + timedelta(seconds=settings.RESET_TOKEN_EXPIRATION_SECONDS)
         to_encode.update({"iat": now, "exp": expire, "scope": "email_token"})
         return jwt.encode(
-            to_encode, settings.RESET_TOKEN_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
+            to_encode,
+            settings.RESET_TOKEN_SECRET_KEY,
+            algorithm=settings.JWT_ALGORITHM,
         )
 
     @staticmethod
     def create_reset_password_token(data: dict) -> str:
-        """
-        Створює тимчасовий токен для безпечного скидання пароля.
+        """Створює тимчасовий токен для безпечного скидання забутого пароля.
 
         :param data: Словник з даними користувача (зокрема email у полі 'sub').
         :type data: dict
@@ -126,14 +140,16 @@ class AuthService:
 
     @staticmethod
     def decode_token(token: str, expected_scope: str) -> str:
-        """Декодує JWT токен і перевіряє відповідність scope.
+        """Декодує JWT токен, перевіряє цілісність, термін придатності та відповідність scope.
 
         :param token: JWT токен у вигляді рядка.
-        :param expected_scope: Очікуване значення поля scope ('access_token', 'refresh_token', 'reset_password', тощо).
-        :raises HTTPException: Якщо токен недійсний, прострочений або містить некоректний scope.
-        :return: Email користувача (sub).
+        :type token: str
+        :param expected_scope: Очікуваний тип токена ('access_token', 'refresh_token', 'email_token', 'reset_password').
+        :type expected_scope: str
+        :raises HTTPException: Код 400, якщо токен має невідповідний scope, недійсний підпис або завершився термін дії.
+        :return: Електронна адреса користувача (поле 'sub' із payload).
+        :rtype: str
         """
-        # Використовуємо секретний ключ для тимчасових токенів (email та скидання пароля)
         secret_key = (
             settings.RESET_TOKEN_SECRET_KEY
             if expected_scope in ("email_token", "reset_password")
@@ -167,15 +183,20 @@ class AuthService:
     def get_current_user(
         token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
     ) -> User:
-        """Отримує поточного користувача за access_token, використовуючи кеш Redis.
+        """Отримує автентифікованого користувача за токеном з використанням кешування в Redis.
 
-        Спочатку виконується спроба отримати користувача з кешу Redis за ключем user:{email}.
-        Якщо в кеші даних немає — користувач запитується з PostgreSQL і записується в Redis на 15 хв.
+        Алгоритм роботи:
+        1. Спроба дістати серіалізованого користувача з Redis за ключем ``user:{email}``.
+        2. Якщо об'єкт знайдено в кеші — він десеріалізується і з'єднується з поточною сесією через ``db.merge``.
+        3. Якщо в кеші запису немає — користувач запитується з PostgreSQL і зберігається в Redis з TTL 900 сек.
 
-        :param token: Bearer токен доступу.
-        :param db: Сесія SQLAlchemy.
-        :raises HTTPException: Якщо токен недійсний або користувача не знайдено.
-        :return: Об'єкт користувача моделі User.
+        :param token: Bearer токен доступу, переданий у заголовку Authorization.
+        :type token: str
+        :param db: Активна синхронна сесія бази даних SQLAlchemy.
+        :type db: Session
+        :raises HTTPException: Код 401, якщо токен не пройшов перевірку або користувача не існує в системі.
+        :return: Екземпляр авторизованої моделі користувача.
+        :rtype: User
         """
         credentials_exception = HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -192,8 +213,7 @@ class AuthService:
             if cached_user:
                 user_data = json.loads(cached_user)  # type: ignore
                 detached_user = User(**user_data)
-                # Прив'язуємо об'єкт до поточної сесії через merge для коректної роботи ORM
-                return db.merge(detached_user, load=False)
+                return db.merge(detached_user)
         except redis.RedisError:
             pass
 
